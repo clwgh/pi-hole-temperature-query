@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Script to read temperature on the Raspberry Pi running Pi-hole and perform
+# a safe domain query to get that temperature into the Query log
+# Created 2022-10-08 version 1.0
+
+# Run manually or via cron as frequently as required, eg every 1 minute
+
+# Temperatures are in C by default
+# Uncomment line below to use F
+#usef=1
+
+# Read RPi SoC temperature from VideoCore GPU
+# Note script user should be in video group (default pi is)
+get_temperature() {
+  temperature=$(vcgencmd measure_temp)
+}
+
+# Sanitise the temperature to make it domain-friendly
+# eg temp=52.6'C --> 52.6
+clean_temperature() {
+  temperature=$(echo $temperature | sed -e "s/temp=//" -e "s/'C//")
+}
+
+# Convert C to F
+convert_c_to_f() {
+  temperature=$(echo "1.8 * $temperature + 32" | bc)
+}
+
+# Run a query against the sanitised temperature
+# IMPORTANT Blacklist regex ^.*temperature\.home\.arpa$ to prevent these from leaving
+# Using home.arpa further protects in case of accidental upstream exposure
+# RR type 66 is IANA unassigned and will appear in the Query Log as TYPE66 and in the Dashboard Query Types as OTHER
+query_temperature() {
+  dig @127.0.0.1 pihole-temp-$temperature.temperature.home.arpa type66 &>/dev/null
+}
+
+# Create a temperature entry
+get_temperature
+clean_temperature
+if [ -n "$usef" ]; then
+  convert_c_to_f
+fi
+query_temperature
